@@ -147,6 +147,11 @@ test_that("cb.reset.parameters works as expected", {
     bst4 <- xgb.train(param, dtrain, nrounds = 2, watchlist,
                       callbacks = list(cb.reset.parameters(my_par)))
   , NA) # NA = no error
+  # CV works as well
+  expect_error(
+    bst4 <- xgb.cv(param, dtrain, nfold = 2, nrounds = 2,
+                   callbacks = list(cb.reset.parameters(my_par)))
+  , NA) # NA = no error
 
   # expect no learning with 0 learning rate
   my_par <- list(eta = c(0., 0.))
@@ -260,11 +265,20 @@ test_that("prediction in xgb.cv works", {
   expect_true(all(sapply(cvx$models, class) == 'xgb.Booster'))
 })
 
+test_that("prediction in xgb.cv works for gblinear too", {
+  set.seed(11)
+  p <- list(booster = 'gblinear', objective = "reg:logistic", nthread = 2)
+  cv <- xgb.cv(p, dtrain, nfold = 5, eta = 0.5, nrounds = 2, prediction = TRUE)
+  expect_false(is.null(cv$evaluation_log))
+  expect_false(is.null(cv$pred))
+  expect_length(cv$pred, nrow(train$data))
+})
+
 test_that("prediction in early-stopping xgb.cv works", {
   set.seed(1)
   expect_output(
     cv <- xgb.cv(param, dtrain, nfold = 5, eta = 0.1, nrounds = 20,
-                 early_stopping_rounds = 5, maximize = FALSE, prediction=TRUE)
+                 early_stopping_rounds = 5, maximize = FALSE, prediction = TRUE)
   , "Stopping. Best iteration")
   
   expect_false(is.null(cv$best_iteration))
@@ -278,4 +292,18 @@ test_that("prediction in early-stopping xgb.cv works", {
   expect_equal(err_pred, err_log, tolerance = 1e-6)
   err_log_last <- cv$evaluation_log[cv$niter, test_error_mean]
   expect_gt(abs(err_pred - err_log_last), 1e-4)
+})
+
+test_that("prediction in xgb.cv for softprob works", {
+  lb <- as.numeric(iris$Species) - 1
+  set.seed(11)
+  expect_warning(
+    cv <- xgb.cv(data = as.matrix(iris[, -5]), label = lb, nfold = 4,
+                 eta = 0.5, nrounds = 5, max_depth = 3, nthread = 2,
+                 subsample = 0.8, gamma = 2,
+                 prediction = TRUE, objective = "multi:softprob", num_class = 3)
+  , NA)
+  expect_false(is.null(cv$pred))
+  expect_equal(dim(cv$pred), c(nrow(iris), 3))
+  expect_lt(diff(range(rowSums(cv$pred))), 1e-6)
 })
